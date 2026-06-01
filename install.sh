@@ -127,12 +127,12 @@ fi
 
 echo ""
 echo -e "${YELLOW}Installing Python dependencies...${NC}"
-"$PYTHON_CMD" -m pip install --upgrade pip
-"$PYTHON_CMD" -m pip install -r requirements.txt
+"$PYTHON_CMD" -m pip install --upgrade pip --break-system-packages
+"$PYTHON_CMD" -m pip install --break-system-packages -r requirements.txt
 
 echo ""
 echo -e "${YELLOW}Installing hindi-cli...${NC}"
-"$PYTHON_CMD" -m pip install -e .
+"$PYTHON_CMD" -m pip install --break-system-packages -e .
 
 echo ""
 echo -e "${GREEN}╔═══════════════════════════════════════════════╗${NC}"
