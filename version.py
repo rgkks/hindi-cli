@@ -6,7 +6,7 @@ __codename__ = "Terminal Stream"
 __author__ = "hindi-cli"
 __license__ = "MIT"
 __description__ = "Terminal streaming utility — YouTube, Anime, and Movies"
-__url__ = "https://github.com/anomalyco/hindi-cli"
+__url__ = "https://github.com/rgkks/hindi-cli"
 
 
 def version_string() -> str:
