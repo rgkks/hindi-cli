@@ -36,7 +36,7 @@
 ### Quick Install (Linux / macOS)
 
 ```bash
-git clone https://github.com/anomalyco/hindi-cli.git
+git clone https://github.com/rgkks/hindi-cli.git
 cd hindi-cli
 chmod +x install.sh
 ./install.sh
@@ -54,7 +54,7 @@ chmod +x install.sh
 | yt-dlp | `pip install yt-dlp` |
 
 ```bash
-git clone https://github.com/anomalyco/hindi-cli.git
+git clone https://github.com/rgkks/hindi-cli.git
 cd hindi-cli
 pip install -r requirements.txt
 pip install -e .
