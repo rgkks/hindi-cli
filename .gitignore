@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Runtime
+*.db
+*.log
+
+# IDE
+.env
+.venv/
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project runtime dirs (created by app)
+cache/
+config/
+history/

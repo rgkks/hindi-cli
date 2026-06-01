@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=64.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hindi-cli"
+version = "1.38.4"
+description = "Terminal streaming utility — YouTube, Anime, and Movies"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "hindi-cli"},
+]
+keywords = ["streaming", "youtube", "anime", "movies", "cli", "terminal", "mpv", "fzf"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Video",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "yt-dlp>=2023.0.0",
+    "httpx>=0.24.0",
+    "beautifulsoup4>=4.12.0",
+    "requests>=2.31.0",
+    "pyperclip>=1.8.2",
+]
+
+[project.urls]
+Homepage = "https://github.com/anomalyco/hindi-cli"
+Repository = "https://github.com/anomalyco/hindi-cli"
+Issues = "https://github.com/anomalyco/hindi-cli/issues"
+
+[project.scripts]
+hindi-cli = "main:main"
+
+[tool.setuptools]
+py-modules = ["main", "version"]
+
+[tool.setuptools.packages.find]
+include = ["core", "providers", "player", "ui", "utils"]
