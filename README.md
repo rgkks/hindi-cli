@@ -106,9 +106,9 @@ hindi-cli --quiet / -q              Suppress startup banner
 ```
 ┌─ Select a category ────────────────────────────┐
 │  ▶  YouTube                                    │
-│  🎬  Anime                                    │
-│  🎥  Movies                                   │
-│  🚪  Quit                                     │
+│  🎬  Anime                                     │
+│  🎥  Movies                                    │
+│  🚪  Quit                                      │
 └────────────────────────────────────────────────┘
 ```
 
