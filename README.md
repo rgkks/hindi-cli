@@ -31,6 +31,12 @@
 
 ---
 
+<div align="center">
+  <img src="Screenshot_2026-06-02_12-04-19.png" alt="hindi-cli screenshot" width="700">
+</div>
+
+---
+
 ## Installation
 
 ### Quick Install (Linux / macOS)
