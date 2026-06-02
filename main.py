@@ -78,8 +78,8 @@ TIME_FILTER_MAP = {
 def _splash():
     os.system("cls" if os.name == "nt" else "clear")
     print("  ╔══════════════════════════════════════╗")
-    print(f"  ║          \U0001f3ac hindi-cli {__version__:<10} \u2b50")
-    print("  ║    YouTube \u2022 Anime \u2022 Movies          \u2b50")
+    print(f"  ║     \U0001f3ac hindi-cli {__version__:<10}         ║")
+    print("  ║     YouTube \u2022 Anime \u2022 Movies         ║")
     print("  ╚══════════════════════════════════════╝")
     print()
 
