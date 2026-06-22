@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from providers.base import ChannelProvider, ProviderRegistry
 from utils.cache import cache
 from utils.logger import log
+from utils.platform import ytdl_cookie_args
 
 
 CACHE_TTL = 300
@@ -65,7 +66,7 @@ def _fmt_duration(seconds: int) -> str:
 def _fmt_latest_label(entry: Dict[str, Any], channel_name: str = "") -> str:
     title = entry.get("title", "Unknown")[:55]
     date_str = _fmt_date(entry.get("upload_date", ""))
-    dur_str = _fmt_duration(int(entry.get("duration", 0)))
+    dur_str = _fmt_duration(int(entry.get("duration") or 0))
     ch = f" [{channel_name}]" if channel_name else ""
     return f"{title}  {date_str}  {dur_str}{ch}"
 
@@ -84,7 +85,7 @@ def _search_channel_id(channel_name: str) -> Optional[str]:
     search_query = f"ytsearch5:{channel_name} channel"
     try:
         result = subprocess.run(
-            ["yt-dlp", "--flat-playlist", "--dump-json",
+            ["yt-dlp"] + ytdl_cookie_args() + ["--flat-playlist", "--dump-json",
              "--no-warnings", "--ignore-errors",
              "--playlist-end", "5", search_query],
             capture_output=True, text=True, timeout=SEARCH_TIMEOUT,
@@ -142,7 +143,7 @@ def _search_channel_id(channel_name: str) -> Optional[str]:
 def _run_ytdlp(url: str, limit: int) -> Tuple[str, Optional[str]]:
     try:
         result = subprocess.run(
-            YTDLP_ARGS + ["--playlist-end", str(limit), url],
+            YTDLP_ARGS[:1] + ytdl_cookie_args() + YTDLP_ARGS[1:] + ["--playlist-end", str(limit), url],
             capture_output=True, text=True, timeout=FETCH_TIMEOUT,
         )
         stderr = result.stderr.strip()
@@ -165,7 +166,49 @@ def _run_ytdlp(url: str, limit: int) -> Tuple[str, Optional[str]]:
         return "", str(e)
 
 
-def _make_label(entry: Dict[str, Any]) -> str:
+def search_channel_videos_raw(channel_url: str, query: str = "",
+                               limit: int = 30) -> List[Dict[str, Any]]:
+    search_url = f"ytsearch{limit}:{query} {channel_url}" if query else channel_url
+    try:
+        result = subprocess.run(
+            ["yt-dlp"] + ytdl_cookie_args() + ["--flat-playlist", "--dump-json",
+             "--no-warnings", "--ignore-errors",
+             "--playlist-end", str(limit), search_url],
+            capture_output=True, text=True, timeout=60)
+        if result.returncode != 0 or not result.stdout.strip():
+            return []
+        items = []
+        for line in result.stdout.strip().split("\n"):
+            if not line.strip():
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            vid = entry.get("id", "")
+            dur = int(entry.get("duration") or 0)
+            items.append({
+                "title": entry.get("title", "Unknown"),
+                "id": vid,
+                "url": entry.get("webpage_url", f"https://youtube.com/watch?v={vid}"),
+                "duration": dur,
+                "duration_str": _fmt_duration(dur),
+                "thumbnail": entry.get("thumbnail", f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"),
+                "view_count": entry.get("view_count", 0),
+            })
+        return items
+    except FileNotFoundError:
+        log.error("yt-dlp not found")
+        return []
+    except subprocess.TimeoutExpired:
+        log.error("yt-dlp timed out")
+        return []
+    except Exception as e:
+        log.error(f"Channel search error: {e}")
+        return []
+
+
+def make_label(entry: Dict[str, Any]) -> str:
     title = entry.get("title", "Unknown")[:55]
     date_str = _fmt_date(entry.get("upload_date", "") or "")
     dur_str = _fmt_duration(int(entry.get("duration") or 0))
@@ -199,7 +242,7 @@ def parse_video_entries(stdout: str) -> List[Dict[str, Any]]:
             "thumbnail": f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg",
             "upload_date": upload_date,
             "timestamp": timestamp,
-            "label": _make_label(entry),
+            "label": make_label(entry),
         })
     items.sort(key=lambda x: x["timestamp"], reverse=True)
     return items
@@ -210,7 +253,8 @@ def fetch_channel_feed(channel_url: str, limit: int = 30,
                        ) -> Tuple[List[Dict[str, Any]], Optional[str]]:
     first_error = ""
 
-    videos_url = channel_url.rstrip("/") + "/videos"
+    base = channel_url.rstrip("/")
+    videos_url = base if base.endswith("/videos") else base + "/videos"
     stdout, first_error = _run_ytdlp(videos_url, limit)
     if not first_error and stdout:
         return parse_video_entries(stdout), None
@@ -375,7 +419,7 @@ class LatestFetcher:
                 parts.append(f"  ✗ {label} ({status['error']})")
         return "\n".join(parts) if parts else "  (no providers)"
 
-    def invalidate_cache(self):
+    def invalidate_cache(self) -> None:
         with self._lock:
             self._cache = []
             self._last_fetch = 0
@@ -393,7 +437,7 @@ def get_latest_fetcher(category: str,
         return _fetchers[category]
 
 
-def invalidate_all_caches():
+def invalidate_all_caches() -> None:
     with _fetchers_lock:
         for f in _fetchers.values():
             f.invalidate_cache()

@@ -125,14 +125,20 @@ if [ "$INSTALL_FZF" = true ]; then
     esac
 fi
 
+PIP_ARGS=""
+if "$PYTHON_CMD" -m pip install --help 2>/dev/null | grep -q break-system-packages; then
+    echo -e "${YELLOW}Detected PEP 668 protection. Using --user install or --break-system-packages...${NC}"
+    PIP_ARGS="--break-system-packages"
+fi
+
 echo ""
 echo -e "${YELLOW}Installing Python dependencies...${NC}"
-"$PYTHON_CMD" -m pip install --upgrade pip --break-system-packages
-"$PYTHON_CMD" -m pip install --break-system-packages -r requirements.txt
+"$PYTHON_CMD" -m pip install --upgrade pip $PIP_ARGS
+"$PYTHON_CMD" -m pip install $PIP_ARGS -r requirements.txt
 
 echo ""
 echo -e "${YELLOW}Installing hindi-cli...${NC}"
-"$PYTHON_CMD" -m pip install --break-system-packages -e .
+"$PYTHON_CMD" -m pip install $PIP_ARGS -e .
 
 echo ""
 echo -e "${GREEN}╔═══════════════════════════════════════════════╗${NC}"

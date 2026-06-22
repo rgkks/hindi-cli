@@ -49,7 +49,7 @@ class Cache:
         self._key_path(key).unlink(missing_ok=True)
 
     def clear(self):
-        shutil.rmtree(str(self._meta))
+        shutil.rmtree(str(self._meta), ignore_errors=False)
         self._meta.mkdir(exist_ok=True)
 
     def get_thumbnail(self, video_id: str) -> Optional[Path]:

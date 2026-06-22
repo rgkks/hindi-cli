@@ -4,6 +4,8 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from core.config import Config
+from utils.logger import log
 from utils.platform import get_app_dir
 
 
@@ -23,6 +25,7 @@ class Database:
         if self._initialized:
             return
         self._initialized = True
+        self._history_ops = 0
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(str(DB_PATH))
         self.conn.row_factory = sqlite3.Row
@@ -88,17 +91,28 @@ class Database:
                        provider: str = "", episode: int = 0,
                        position: float = 0.0, duration: float = 0.0,
                        metadata: Optional[dict] = None):
-        self.conn.execute(
-            """INSERT INTO watch_history (media_type, title, url, provider,
-               episode, position, duration, watched_at, metadata)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (media_type, title, url, provider, episode, position, duration,
-             time.time(), json.dumps(metadata or {}))
-        )
-        self.conn.execute(
-            "DELETE FROM watch_history WHERE id NOT IN (SELECT id FROM watch_history ORDER BY watched_at DESC LIMIT 500)"
-        )
-        self.conn.commit()
+        try:
+            self.conn.execute(
+                """INSERT INTO watch_history (media_type, title, url, provider,
+                   episode, position, duration, watched_at, metadata)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (media_type, title, url, provider, episode, position, duration,
+                 time.time(), json.dumps(metadata or {}))
+            )
+            self._history_ops += 1
+            if self._history_ops >= 20:
+                self._history_ops = 0
+                limit = Config().get("behavior", "history_size", default=500)
+                if not isinstance(limit, int) or limit < 1:
+                    limit = 500
+                self.conn.execute(
+                    "DELETE FROM watch_history WHERE id NOT IN ("
+                    "SELECT id FROM watch_history ORDER BY watched_at DESC LIMIT ?)",
+                    (limit,)
+                )
+            self.conn.commit()
+        except sqlite3.Error as e:
+            log.error(f"Database add_to_history error: {e}")
 
     def get_history(self, media_type: Optional[str] = None, limit: int = 50):
         if media_type:
@@ -113,12 +127,18 @@ class Database:
             )
         return [dict(r) for r in cur.fetchall()]
 
+    def _exec(self, sql: str, params=()):
+        try:
+            self.conn.execute(sql, params)
+            self.conn.commit()
+        except sqlite3.Error as e:
+            log.error(f"Database error: {e}")
+
     def add_liked(self, url: str, title: str, media_type: str):
-        self.conn.execute(
+        self._exec(
             "INSERT OR IGNORE INTO liked_videos (url, title, media_type, added_at) VALUES (?, ?, ?, ?)",
             (url, title, media_type, time.time())
         )
-        self.conn.commit()
 
     def get_liked(self, media_type: Optional[str] = None):
         if media_type:
@@ -133,15 +153,14 @@ class Database:
         return [dict(r) for r in cur.fetchall()]
 
     def update_anime_progress(self, anime_id: str, title: str, episode: int,
-                               position: float, duration: float,
-                               provider: str = "", url: str = ""):
-        self.conn.execute(
+                                position: float, duration: float,
+                                provider: str = "", url: str = ""):
+        self._exec(
             """INSERT OR REPLACE INTO anime_progress
                (anime_id, title, episode, position, duration, provider, url, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (anime_id, title, episode, position, duration, provider, url, time.time())
         )
-        self.conn.commit()
 
     def get_anime_progress(self, anime_id: str):
         cur = self.conn.execute(
@@ -160,16 +179,15 @@ class Database:
         return [dict(r) for r in cur.fetchall()]
 
     def update_movie_progress(self, movie_id: str, title: str,
-                               position: float, duration: float,
-                               provider: str = "", url: str = "",
-                               language: str = ""):
-        self.conn.execute(
+                                position: float, duration: float,
+                                provider: str = "", url: str = "",
+                                language: str = ""):
+        self._exec(
             """INSERT OR REPLACE INTO movie_progress
                (movie_id, title, position, duration, provider, url, language, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (movie_id, title, position, duration, provider, url, language, time.time())
         )
-        self.conn.commit()
 
     def get_movie_progress(self, movie_id: str):
         cur = self.conn.execute(
@@ -211,24 +229,60 @@ class Database:
         }
 
     def clear_history(self, media_type: Optional[str] = None):
-        if media_type:
-            self.conn.execute("DELETE FROM watch_history WHERE media_type = ?", (media_type,))
-            if media_type == "anime":
+        try:
+            if media_type:
+                self.conn.execute("DELETE FROM watch_history WHERE media_type = ?", (media_type,))
+                if media_type == "anime":
+                    self.conn.execute("DELETE FROM anime_progress")
+                elif media_type == "movie":
+                    self.conn.execute("DELETE FROM movie_progress")
+            else:
+                self.conn.execute("DELETE FROM watch_history")
                 self.conn.execute("DELETE FROM anime_progress")
-            elif media_type == "movie":
                 self.conn.execute("DELETE FROM movie_progress")
-        else:
-            self.conn.execute("DELETE FROM watch_history")
-            self.conn.execute("DELETE FROM anime_progress")
-            self.conn.execute("DELETE FROM movie_progress")
-        self.conn.commit()
+            self.conn.commit()
+        except sqlite3.Error as e:
+            log.error(f"Database clear_history error: {e}")
 
     def remove_history_item(self, item_id: int):
         self.conn.execute("DELETE FROM watch_history WHERE id = ?", (item_id,))
         self.conn.commit()
 
+    def update_history_position(self, url: str, position: float):
+        try:
+            self.conn.execute(
+                "UPDATE watch_history SET position = ? WHERE id = (SELECT MAX(id) FROM watch_history WHERE url = ?)",
+                (position, url)
+            )
+            self.conn.commit()
+        except sqlite3.Error as e:
+            log.error(f"Database update_history_position error: {e}")
+
+    def update_playback_position(self, media_type: str, item_id: str, title: str,
+                                   position: float, duration: float,
+                                   provider: str = "", url: str = ""):
+        try:
+            if media_type == "anime":
+                self.conn.execute(
+                    """UPDATE anime_progress SET position = ?, duration = ?, updated_at = ?
+                       WHERE anime_id = ?""",
+                    (position, duration, time.time(), item_id)
+                )
+            elif media_type == "movie":
+                self.conn.execute(
+                    """UPDATE movie_progress SET position = ?, duration = ?, updated_at = ?
+                       WHERE movie_id = ?""",
+                    (position, duration, time.time(), item_id)
+                )
+            self.conn.commit()
+        except sqlite3.Error as e:
+            log.error(f"Database update_playback_position error: {e}")
+
     def close(self):
-        self.conn.close()
+        try:
+            self.conn.close()
+        except sqlite3.Error as e:
+            log.error(f"Database close error: {e}")
 
 
 db = Database()

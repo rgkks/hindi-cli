@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from utils.logger import log
 from utils.platform import get_app_dir, get_cache_dir
 
 
@@ -9,6 +10,22 @@ CONFIG_DIR = Path.home() / ".config" / "hindi-cli"
 CONFIG_PATH = CONFIG_DIR / "config.json"
 HISTORY_DIR = get_app_dir()
 CACHE_DIR = get_cache_dir()
+
+
+def _deep_merge(base: dict, override: dict) -> dict:
+    merged = {}
+    keys = set(base.keys()) | set(override.keys())
+    for key in keys:
+        if key in base and key in override:
+            if isinstance(base[key], dict) and isinstance(override[key], dict):
+                merged[key] = _deep_merge(base[key], override[key])
+            else:
+                merged[key] = override[key]
+        elif key in base:
+            merged[key] = base[key]
+        else:
+            merged[key] = override[key]
+    return merged
 
 
 DEFAULT_CONFIG = {
@@ -21,14 +38,12 @@ DEFAULT_CONFIG = {
             "--stream-buffer-size=128M",
             "--cache-pause-wait=10",
         ],
-        "vlc_args": [],
         "quality": "720p",
     },
     "ui": {
         "theme": "dark",
         "icons": False,
         "preview": False,
-        "thumbnails": False,
     },
     "behavior": {
         "autoplay_next": True,
@@ -75,12 +90,31 @@ class Config:
             self._save()
 
     def _save(self):
-        self._merged = {**DEFAULT_CONFIG, **self.data}
+        _validated = {}
+        for section, defaults in DEFAULT_CONFIG.items():
+            if isinstance(defaults, dict):
+                user_vals = self.data.get(section, {})
+                if not isinstance(user_vals, dict):
+                    user_vals = {}
+                _validated[section] = _deep_merge(defaults, user_vals)
+            else:
+                _validated[section] = self.data.get(section, defaults)
+        self._merged = _validated
+        mpv_args = self._merged.get("player", {}).get("mpv_args")
+        if not isinstance(mpv_args, list):
+            self._merged["player"]["mpv_args"] = DEFAULT_CONFIG["player"]["mpv_args"]
+        for key in ("threshold_mb", "max_cache_mb"):
+            val = self._merged.get("preload", {}).get(key)
+            if not isinstance(val, (int, float)) or val <= 0:
+                self._merged["preload"][key] = DEFAULT_CONFIG["preload"][key]
+        hs = self._merged.get("behavior", {}).get("history_size")
+        if not isinstance(hs, int) or hs < 1:
+            self._merged["behavior"]["history_size"] = DEFAULT_CONFIG["behavior"]["history_size"]
         CONFIG_PATH.write_text(json.dumps(self._merged, indent=2))
 
     def get(self, *keys: str, default: Any = None) -> Any:
         if not self._merged:
-            self._merged = {**DEFAULT_CONFIG, **self.data}
+            self._merged = _deep_merge(DEFAULT_CONFIG, self.data)
         current = self._merged
         for key in keys:
             if isinstance(current, dict):

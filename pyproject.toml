@@ -31,15 +31,13 @@ classifiers = [
 dependencies = [
     "yt-dlp>=2023.0.0",
     "httpx>=0.24.0",
-    "beautifulsoup4>=4.12.0",
-    "requests>=2.31.0",
     "pyperclip>=1.8.2",
 ]
 
 [project.urls]
-Homepage = "https://github.com/anomalyco/hindi-cli"
-Repository = "https://github.com/anomalyco/hindi-cli"
-Issues = "https://github.com/anomalyco/hindi-cli/issues"
+Homepage = "https://github.com/rgkks/hindi-cli"
+Repository = "https://github.com/rgkks/hindi-cli"
+Issues = "https://github.com/rgkks/hindi-cli/issues"
 
 [project.scripts]
 hindi-cli = "main:main"
@@ -48,4 +46,4 @@ hindi-cli = "main:main"
 py-modules = ["main", "version"]
 
 [tool.setuptools.packages.find]
-include = ["core", "providers", "player", "ui", "utils"]
+include = ["core", "providers", "ui", "utils"]

@@ -1,3 +1,4 @@
+import unicodedata
 from typing import Dict, List, Optional, Tuple
 
 from core.fzf import FZF
@@ -10,7 +11,7 @@ def _header(text: str) -> str:
 def show_main_menu() -> Optional[str]:
     result = FZF.menu(["YouTube", "Anime", "Movies", "Quit"],
                       prompt="hindi-cli > ", header=_header("Select category"))
-    return "Quit" if result is None else result
+    return result
 
 
 def show_submenu(title: str, items: List[Tuple[str, str]]) -> Optional[str]:
@@ -31,8 +32,10 @@ def show_search_results(items: List[Dict], title: str = "Results") -> Optional[D
     result = FZF.menu(labels, prompt=f"{title} > ", header=_header(title))
     if result is None:
         return None
+    result_norm = unicodedata.normalize("NFC", result.strip())
     for item in items:
-        if result == item.get("label", item.get("title", "")):
+        item_label = unicodedata.normalize("NFC", item.get("label", item.get("title", "")).strip())
+        if result_norm == item_label:
             return item
     return None
 
@@ -63,8 +66,9 @@ def show_action_menu(video_title: str) -> Optional[str]:
                "🌐  Open in browser", "❤  Like", "◀  Back"]
     result = FZF.menu(actions, prompt="Action > ", header=_header(video_title[:50]))
     if result:
+        result_norm = unicodedata.normalize("NFC", result.strip())
         for a in actions:
-            if result == a:
+            if result_norm == unicodedata.normalize("NFC", a):
                 parts = a.split("  ", 1)
                 return parts[-1] if len(parts) > 1 else parts[0]
     return None
@@ -103,11 +107,12 @@ def show_continue_menu(items: List[Dict], title: str = "Continue") -> Optional[D
     result = FZF.menu(labels, prompt=f"{title} > ", header=_header(title))
     if result is None:
         return None
+    result_norm = unicodedata.normalize("NFC", result.strip())
     for i, item in enumerate(items):
         dur = max(item.get("duration", 1), 1)
         pct = int((item.get("position", 0) / dur) * 100)
-        label = f"{item['title']} [{pct}%] - {item.get('provider', '?')}"
-        if result == label:
+        label = unicodedata.normalize("NFC", f"{item['title']} [{pct}%] - {item.get('provider', '?')}")
+        if result_norm == label:
             return item
     return None
 

@@ -46,4 +46,5 @@ class ProviderRegistry:
     @classmethod
     def get_channels(cls, category: str) -> Dict[str, ChannelProvider]:
         return {n: p for n, p in cls._providers.items()
-                if isinstance(p, ChannelProvider) and p.category == category}
+                if isinstance(p, ChannelProvider) and p.category == category
+                and p.enabled}

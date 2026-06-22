@@ -39,11 +39,11 @@ class FZF:
 
         try:
             proc = subprocess.run(
-                ["fzf"] + opts,
-                input="\n".join(items),
-                capture_output=True,
-                text=True,
-            )
+		 ["fzf"] + opts,
+    		 input="\n".join(items),
+   		 text=True,
+   		 stdout=subprocess.PIPE,
+	    )
             return proc.stdout.strip() or None if proc.returncode == 0 else None
         except FileNotFoundError:
             print("fzf not found.")

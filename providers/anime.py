@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 
 from providers.base import ChannelProvider, Provider, ProviderRegistry
 from utils.cache import cache
-from utils.latest import fetch_channel_feed, _make_label
+from utils.latest import fetch_channel_feed, search_channel_videos_raw, make_label as _make_label
 from utils.logger import log
 
 
@@ -50,47 +50,13 @@ def _extract_episode(title: str) -> int:
 
 def _search_channel_videos(channel_url: str, query: str = "",
                             limit: int = 30) -> List[Dict[str, Any]]:
-    search_url = f"ytsearch{limit}:{query} {channel_url}" if query else channel_url
-    try:
-        result = subprocess.run([
-            "yt-dlp", "--flat-playlist", "--dump-json",
-            "--no-warnings", "--ignore-errors",
-            "--playlist-end", str(limit), search_url,
-        ], capture_output=True, text=True, timeout=60)
-        if result.returncode != 0 or not result.stdout.strip():
-            return []
-        items = []
-        for line in result.stdout.strip().split("\n"):
-            if not line.strip():
-                continue
-            try:
-                entry = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            vid = entry.get("id", "")
-            dur = int(entry.get("duration", 0))
-            ep = _extract_episode(entry.get("title", ""))
-            items.append({
-                "title": entry.get("title", "Unknown"),
-                "id": vid,
-                "url": entry.get("webpage_url", f"https://youtube.com/watch?v={vid}"),
-                "duration": dur,
-                "duration_str": _fmt_duration(dur),
-                "thumbnail": entry.get("thumbnail", f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"),
-                "episode": ep,
-                "type": "anime",
-                "label": f"[EP {ep}] {entry.get('title', '')[:70]}" if ep else entry.get("title", "")[:80],
-            })
-        return items
-    except FileNotFoundError:
-        log.error("yt-dlp not found")
-        return []
-    except subprocess.TimeoutExpired:
-        log.error("yt-dlp timed out")
-        return []
-    except Exception as e:
-        log.error(f"Channel search error: {e}")
-        return []
+    items = search_channel_videos_raw(channel_url, query, limit)
+    for item in items:
+        ep = _extract_episode(item.get("title", ""))
+        item["episode"] = ep
+        item["type"] = "anime"
+        item["label"] = f"[EP {ep}] {item['title'][:70]}" if ep else item["title"][:80]
+    return items
 
 
 class AnimeChannelProvider(ChannelProvider):

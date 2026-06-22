@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 from providers.base import Provider, ProviderRegistry
 from utils.cache import cache
 from utils.logger import log
+from utils.platform import ytdl_cookie_args
 
 
 class YouTubeProvider(Provider):
@@ -16,7 +17,7 @@ class YouTubeProvider(Provider):
     def _run_ytdlp(self, args: List[str]) -> Optional[List[Dict]]:
         try:
             result = subprocess.run(
-                ["yt-dlp"] + args,
+                ["yt-dlp"] + ytdl_cookie_args() + args,
                 capture_output=True,
                 text=True,
                 timeout=60,
@@ -45,7 +46,7 @@ class YouTubeProvider(Provider):
         cached = cache.get(f"yt_s:{query.lower()}", max_age=300)
         if cached:
             return cached
-        limit = kwargs.get("limit", 10)
+        limit = kwargs.get("limit", 15)
         data = self._run_ytdlp([
             "--flat-playlist", "--dump-json", "--no-warnings",
             "--ignore-errors", "--playlist-end", str(limit),
@@ -65,7 +66,7 @@ class YouTubeProvider(Provider):
             title = entry.get("title", "Unknown")
             video_id = entry.get("id", "")
             url = entry.get("webpage_url", f"https://youtube.com/watch?v={video_id}")
-            duration = int(entry.get("duration", 0))
+            duration = int(entry.get("duration") or 0)
             view_count = entry.get("view_count", 0)
             uploader = entry.get("uploader", entry.get("channel", "Unknown"))
 

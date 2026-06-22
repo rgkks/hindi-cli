@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""hindi-cli: Terminal streaming utility — YouTube, Anime, and Movies."""
+
 import argparse
 import os
 import shutil
@@ -27,9 +27,9 @@ from ui.menu import (
 from ui.status import Status
 from utils.latest import get_latest_fetcher, invalidate_all_caches
 from utils.logger import log, setup_logger
-from utils.platform import open_url, get_cache_dir, get_app_dir, which
+from utils.platform import open_url, get_cache_dir, get_app_dir, which, ytdl_cookie_args
 from utils.preload import PRELOAD_FORMATS, Preloader, _parse_progress
-from version import __version__, version_string, about_string
+from version import __version__, __version_display__, version_string, about_string, is_newer
 
 
 MPV_ARGS = [
@@ -52,16 +52,17 @@ MPV_ARGS = [
     "--stream-lavf-o=reconnect_streamed=1",
     "--stream-lavf-o=reconnect_delay_max=30",
     "--vd-lavc-threads=0",
+    "--vd-lavc-software-fallback=yes",
     "--video-sync=audio",
     "--keep-open=yes",
     "--force-seekable=yes",
 ]
 
 YTDL_FORMATS = {
-    "2160p": "bestvideo[height<=2160][vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo[height<=2160]+bestaudio/best[height<=2160]",
-    "1440p": "bestvideo[height<=1440][vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo[height<=1440]+bestaudio/best[height<=1440]",
-    "1080p": "bestvideo[height<=1080][vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]",
-    "720p": "bestvideo[height<=720][vcodec^=avc1]+bestaudio[acodec^=mp4a]/best[height<=720]",
+    "2160p": "bestvideo[height<=2160]+bestaudio/best[height<=2160]",
+    "1440p": "bestvideo[height<=1440]+bestaudio/best[height<=1440]",
+    "1080p": "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
+    "720p": "bestvideo[height<=720]+bestaudio/best[height<=720]",
     "480p": "best[height<=480]",
     "360p": "best[height<=360]",
     "audio": "bestaudio/best",
@@ -75,10 +76,10 @@ TIME_FILTER_MAP = {
 }
 
 
-def _splash():
-    os.system("cls" if os.name == "nt" else "clear")
+def _splash() -> None:
+    print("\033[2J\033[H", end="")
     print("  ╔══════════════════════════════════════╗")
-    print(f"  ║     \U0001f3ac hindi-cli {__version__:<10}         ║")
+    print(f"  ║     \U0001f3ac hindi-cli {__version_display__:<10}         ║")
     print("  ║     YouTube \u2022 Anime \u2022 Movies         ║")
     print("  ╚══════════════════════════════════════╝")
     print()
@@ -88,7 +89,7 @@ def _splash():
 # CLI commands
 # ---------------------------------------------------------------------------
 
-def _show_history():
+def _show_history() -> None:
     items = db.get_history(limit=50)
     if not items:
         show_info("No watch history")
@@ -101,7 +102,7 @@ def _show_history():
     print()
 
 
-def _show_stats():
+def _show_stats() -> None:
     data = db.get_stats()
     print()
     print(f"  \u2699 hindi-cli Statistics")
@@ -116,7 +117,7 @@ def _show_stats():
     print()
 
 
-def _doctor():
+def _doctor() -> None:
     print()
     print(f"  \u2699 hindi-cli Diagnostics")
     print(f"  {'─' * 50}")
@@ -126,7 +127,11 @@ def _doctor():
     print(f"  Config:     {CONFIG_FILE_PATH}")
     print(f"  Data:       {get_app_dir()}")
     print(f"  Cache:      {get_cache_dir()}")
-    print(f"  Log:        {log.handlers[0].baseFilename if hasattr(log.handlers[0], 'baseFilename') else 'N/A'}")
+    log_path = "N/A"
+    if log.handlers:
+        h = log.handlers[0]
+        log_path = getattr(h, "baseFilename", "N/A")
+    print(f"  Log:        {log_path}")
     print()
 
     checks = [
@@ -175,30 +180,32 @@ def _check_network() -> bool:
         import httpx
         r = httpx.get("https://www.youtube.com", follow_redirects=True, timeout=5)
         return r.is_success
+    except ImportError:
+        return False
     except Exception:
         return False
 
 
-def _check_update():
+def _check_update() -> None:
     print()
     print(f"  Checking for updates...")
     try:
         import httpx
         r = httpx.get(
-            "https://api.github.com/repos/anomalyco/hindi-cli/releases/latest",
+            "https://api.github.com/repos/rgkks/hindi-cli/releases/latest",
             timeout=10,
         )
         if r.is_success:
             data = r.json()
             latest = data.get("tag_name", "").lstrip("v")
-            current = __version__.lstrip("Beta ")
-            if latest and latest != current:
-                print(f"  \u2191 Update available: {latest} (current: {__version__})")
-                print(f"  \u2192 https://github.com/anomalyco/hindi-cli/releases")
+            current = __version__
+            if latest and is_newer(latest, current):
+                print(f"  \u2191 Update available: {latest} (current: {__version_display__})")
+                print(f"  \u2192 https://github.com/rgkks/hindi-cli/releases")
             elif latest:
-                print(f"  \u2713 You're up to date ({__version__})")
+                print(f"  \u2713 You're up to date ({__version_display__})")
             else:
-                print(f"  \u2713 {__version__}")
+                print(f"  \u2713 {__version_display__}")
         else:
             print(f"  \u2717 Could not check for updates (HTTP {r.status_code})")
     except Exception as e:
@@ -206,7 +213,7 @@ def _check_update():
     print()
 
 
-def _clear_cache():
+def _clear_cache() -> None:
     from utils.cache import cache
     from utils.preload import Preloader
 
@@ -215,7 +222,7 @@ def _clear_cache():
     show_success("Cache cleared")
 
 
-def _show_config():
+def _show_config() -> None:
     path = CONFIG_FILE_PATH
     if path.exists():
         print(f"\n  Config: {path}\n")
@@ -229,7 +236,7 @@ def _show_config():
 # Core flows
 # ---------------------------------------------------------------------------
 
-def check_deps():
+def check_deps() -> None:
     for name, hint in [("fzf", "apt/brew install fzf"),
                         ("mpv", "apt/brew install mpv"),
                         ("yt-dlp", "pip install yt-dlp")]:
@@ -238,9 +245,9 @@ def check_deps():
             sys.exit(1)
 
 
-def sig_handler(sig, frame):
+def sig_handler(sig: int, frame: object) -> None:
     print("\nExiting...")
-    sys.exit(0)
+    raise KeyboardInterrupt
 
 
 def _handle_video_action(item: Dict[str, Any],
@@ -265,7 +272,9 @@ def _handle_video_action(item: Dict[str, Any],
         show_success("Liked")
         return True
     if act == "Download":
-        dl_video(item)
+        q = show_quality_menu()
+        if q:
+            dl_video(item, q)
         return True
     if act == "Play now":
         q = show_quality_menu()
@@ -277,7 +286,7 @@ def _handle_video_action(item: Dict[str, Any],
     return True
 
 
-def search_yt():
+def search_yt() -> None:
     query = show_text_input("Search YouTube: ")
     if not query:
         return
@@ -301,7 +310,7 @@ def search_yt():
         _handle_video_action(selected, "youtube")
 
 
-def history_flow():
+def history_flow() -> None:
     while True:
         act = show_submenu("History & Likes", [
             ("Watch History", "h"), ("Liked Videos", "l"),
@@ -342,7 +351,7 @@ def history_flow():
                 show_success("Cleared")
 
 
-def yt_flow():
+def yt_flow() -> None:
     while True:
         act = show_submenu("YouTube", [
             ("Search YouTube", "s"), ("History & Likes", "h"), ("Go Back", "b"),
@@ -399,7 +408,8 @@ def search_anime(provider_name: str = "anime"):
         show_error("No episodes")
         return
     eps = [{"title": e["title"], "label": e["label"], "url": e["url"],
-            "episode": e.get("episode", 0)} for e in episodes]
+            "episode": e.get("episode", 0), "type": "anime",
+            "anime_id": anime["title"].replace(" ", "_").lower()} for e in episodes]
     ep = show_search_results(eps, "Episodes")
     if not ep:
         return
@@ -421,7 +431,7 @@ def search_anime(provider_name: str = "anime"):
     play_video(ep_data, q, title=f"{anime['title']} - EP {ep_data.get('episode', 0)}")
 
 
-def continue_anime():
+def continue_anime() -> None:
     items = db.get_all_anime_progress()
     if not items:
         show_info("No progress")
@@ -429,7 +439,8 @@ def continue_anime():
     lst = [{"title": p["title"], "position": p.get("position", 0),
             "duration": max(p.get("duration", 1), 1),
             "provider": p.get("provider", ""), "url": p.get("url", ""),
-            "episode": p.get("episode", 0)} for p in items]
+            "episode": p.get("episode", 0), "type": "anime",
+            "anime_id": p.get("anime_id", p.get("id", p["url"].split("/")[-1]))} for p in items]
     sel = show_continue_menu(lst, "Continue Anime")
     if not sel:
         return
@@ -476,12 +487,12 @@ def _run_latest_flow(fetcher, category: str, title: str):
         _handle_video_action(sel, category)
 
 
-def latest_anime_flow():
+def latest_anime_flow() -> None:
     fetcher = get_latest_fetcher("anime")
     _run_latest_flow(fetcher, "anime", "Latest Anime")
 
 
-def latest_movies_flow():
+def latest_movies_flow() -> None:
     fetcher = get_latest_fetcher("movies")
     _run_latest_flow(fetcher, "movies", "Latest Movies")
 
@@ -528,7 +539,7 @@ def browse_anime_providers():
                 _handle_video_action(chosen, "anime")
 
 
-def anime_flow():
+def anime_flow() -> None:
     while True:
         act = show_submenu("Anime", [
             ("Search Anime", "s"), ("Latest Anime", "l"),
@@ -621,14 +632,15 @@ def search_movies(provider_name: str = "movies"):
             play_video(sel, q)
 
 
-def continue_movies():
+def continue_movies() -> None:
     items = db.get_all_movie_progress()
     if not items:
         show_info("No progress")
         return
     lst = [{"title": p["title"], "position": p.get("position", 0),
             "duration": max(p.get("duration", 1), 1),
-            "provider": p.get("provider", ""), "url": p.get("url", "")} for p in items]
+            "provider": p.get("provider", ""), "url": p.get("url", ""),
+            "type": "movie", "id": p.get("id", p.get("movie_id", ""))} for p in items]
     sel = show_continue_menu(lst, "Continue Movies")
     if not sel:
         return
@@ -679,7 +691,7 @@ def browse_movie_providers():
                 _handle_video_action(chosen, "movie")
 
 
-def movies_flow():
+def movies_flow() -> None:
     while True:
         act = show_submenu("Movies", [
             ("Search Movies", "s"), ("Latest Movies", "l"),
@@ -711,11 +723,11 @@ def dl_video(item: Dict[str, Any], quality: str = "1080p"):
     out = Path.home() / "Downloads"
     out.mkdir(parents=True, exist_ok=True)
     dl_quality = quality.replace("audio only", "audio")
-    fmt = PRELOAD_FORMATS.get(dl_quality, PRELOAD_FORMATS["1080p"])
+    fmt = YTDL_FORMATS.get(dl_quality, YTDL_FORMATS["1080p"])
     title = item.get("title", "video")[:50]
     try:
         proc = subprocess.Popen(
-            ["yt-dlp", "--format", fmt, "-o", str(out / f"{safe}.%(ext)s"),
+            ["yt-dlp"] + ytdl_cookie_args() + ["--format", fmt, "-o", str(out / f"{safe}.%(ext)s"),
              "--embed-thumbnail", "--embed-metadata",
              "--no-warnings", "--progress", "--newline", url],
             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
@@ -736,7 +748,14 @@ def dl_video(item: Dict[str, Any], quality: str = "1080p"):
         show_error(f"Download failed: {e}")
 
 
-_preloader = Preloader()
+_preloader: Optional[Preloader] = None
+
+
+def _get_preloader() -> Preloader:
+    global _preloader
+    if _preloader is None:
+        _preloader = Preloader()
+    return _preloader
 
 
 def play_video(item: Dict[str, Any], quality: str = "720p",
@@ -758,16 +777,32 @@ def play_video(item: Dict[str, Any], quality: str = "720p",
     preload_quality = quality.replace("audio only", "audio")
 
     if preload_quality in PRELOAD_FORMATS:
-        result = _preloader.preload(url, preload_quality, title=video)
-        if result:
-            cache_path, dl_proc = result
+        pl = _get_preloader()
+        cache_result = pl.preload(url, preload_quality, title=video)
+        if cache_result is None:
+            hint = pl.last_fail_hint
+            pl.last_fail_hint = None
+            if hint:
+                return
+        else:
+            cache_path, dl_proc = cache_result
 
     if cache_path:
         cmd = ["mpv", str(cache_path)] + MPV_ARGS
     else:
         cmd = ["mpv", url, f"--ytdl-format={fmt}"] + MPV_ARGS
 
+    watch_later_dir = get_cache_dir() / "watch_later"
+    watch_later_dir.mkdir(parents=True, exist_ok=True)
+    for f in watch_later_dir.iterdir():
+        try:
+            f.unlink()
+        except OSError:
+            pass
+
     cmd.append(f"--title=hindi-cli - {video[:80]}")
+    cmd.append("--save-position-on-quit")
+    cmd.append(f"--watch-later-directory={watch_later_dir}")
 
     if cache_path:
         cmd.append("--cache-pause=no")
@@ -775,27 +810,69 @@ def play_video(item: Dict[str, Any], quality: str = "720p",
     if position > 0:
         cmd.append(f"--start={position}")
     extra = Config().get("player", "mpv_args")
-    if extra:
+    if isinstance(extra, list):
         cmd.extend(extra)
 
+    proc = None
+    exit_pos = 0.0
     try:
-        subprocess.Popen(cmd, stderr=subprocess.DEVNULL).wait()
-        show_success(f"Done: {video[:60]}")
+        proc = subprocess.Popen(cmd, stderr=subprocess.PIPE, text=True)
+        proc.wait()
+        if proc.returncode == 0:
+            show_success(f"Done: {video[:60]}")
+        else:
+            err = proc.stderr.read()[:200] if proc.stderr else ""
+            show_error(f"mpv failed (exit {proc.returncode}): {err.strip()}")
     except FileNotFoundError:
         show_error("mpv not found")
     except Exception as e:
         show_error(f"Error: {e}")
     finally:
+        if proc and proc.stderr:
+            try:
+                proc.stderr.close()
+            except OSError:
+                pass
         if dl_proc:
             dl_proc.kill()
             dl_proc.wait()
         if cache_path:
             Preloader._cleanup_file(cache_path)
 
+    for f in watch_later_dir.iterdir():
+        try:
+            text = f.read_text()
+            for line in text.splitlines():
+                if line.startswith("start="):
+                    val = line.split("=", 1)[1].strip()
+                    exit_pos = float(val)
+                    break
+        except (OSError, ValueError):
+            pass
+        try:
+            f.unlink()
+        except OSError:
+            pass
+
+    if exit_pos > 5:
+        media_type = item.get("type") or item.get("media_type", "video")
+        db.update_history_position(url, exit_pos)
+        if media_type == "anime":
+            aid = item.get("anime_id") or item.get("id", "") or video.replace(" ", "_").lower()
+            db.update_playback_position("anime", aid, video,
+                                          exit_pos, item.get("duration", 0),
+                                          provider=item.get("provider", "anime"),
+                                          url=url)
+        elif media_type == "movie":
+            mid = item.get("id", url)
+            db.update_playback_position("movie", mid, video,
+                                          exit_pos, item.get("duration", 0),
+                                          provider=item.get("provider", "movies"),
+                                          url=url)
+
 
 def main_loop(args: argparse.Namespace):
     check_deps()
-    signal.signal(signal.SIGINT, sig_handler)
     signal.signal(signal.SIGTERM, sig_handler)
 
     if not args.quiet:
@@ -815,7 +892,83 @@ def main_loop(args: argparse.Namespace):
             _splash()
 
 
-def main():
+COOKIES_PATH = Path.home() / ".config" / "hindi-cli" / "cookies.txt"
+
+
+def _login() -> None:
+    COOKIES_PATH.parent.mkdir(parents=True, exist_ok=True)
+    COOKIES_PATH.unlink(missing_ok=True)
+    print()
+    print(f"  \u2699 YouTube Login")
+    print(f"  {'─' * 50}")
+    print(f"  First, sign into YouTube in your browser.")
+    print(f"  Then leave the browser open and run this again.")
+    print()
+
+    browsers = ["firefox", "chrome", "chromium", "brave", "edge", "opera", "vivaldi"]
+    cookie_dirs = {
+        "firefox": Path.home() / ".mozilla" / "firefox",
+        "chrome": Path.home() / ".config" / "google-chrome",
+        "chromium": Path.home() / ".config" / "chromium",
+        "brave": Path.home() / ".config" / "BraveSoftware" / "Brave-Browser",
+        "edge": Path.home() / ".config" / "microsoft-edge",
+        "opera": Path.home() / ".config" / "opera",
+        "vivaldi": Path.home() / ".config" / "vivaldi",
+    }
+    found = None
+    for browser in browsers:
+        d = cookie_dirs.get(browser)
+        if not (d and d.exists() and any(d.iterdir())):
+            continue
+        print(f"  {browser}...", end=" ")
+        COOKIES_PATH.unlink(missing_ok=True)
+        try:
+            r = subprocess.run(
+                ["yt-dlp", "--cookies-from-browser", browser, "--cookies", str(COOKIES_PATH),
+                 "--skip-download", "--print", "title",
+                 "https://www.youtube.com/watch?v=dQw4w9WgXcQ"],
+                capture_output=True, text=True, timeout=30,
+            )
+            has_auth = r.returncode == 0
+        except Exception:
+            has_auth = False
+        if not has_auth and COOKIES_PATH.exists() and COOKIES_PATH.stat().st_size > 100:
+            raw = COOKIES_PATH.read_text()
+            if "SAPISID" in raw or "__Secure-3PAPISID" in raw:
+                has_auth = True
+        if has_auth:
+            print("\u2713 cookies saved")
+            found = browser
+            break
+        print("\u2717 no YouTube login found")
+
+    if found:
+        show_success(f"Cookies saved from {browser}")
+        Config().set(str(COOKIES_PATH), "youtube", "cookies_file")
+    else:
+        show_error("No browser with YouTube login found.")
+        print()
+        print("  To fix:")
+        print("  1. Open Firefox and go to https://accounts.google.com")
+        print("  2. Sign in with any Google account")
+        print("  3. Keep the browser open")
+        print("  4. Run: hindi-cli --login")
+        if COOKIES_PATH.exists():
+            COOKIES_PATH.unlink()
+    print()
+
+
+def _logout() -> None:
+    if COOKIES_PATH.exists():
+        COOKIES_PATH.unlink()
+        show_success("Cookies cleared")
+    cfg_path = str(COOKIES_PATH)
+    if Config().get("youtube", "cookies_file") == cfg_path:
+        Config().set("", "youtube", "cookies_file")
+    print()
+
+
+def main() -> None:
     parser = argparse.ArgumentParser(
         prog="hindi-cli",
         description="Terminal streaming utility — YouTube, Anime, and Movies",
@@ -831,7 +984,7 @@ Examples:
         """,
     )
 
-    parser.add_argument("--version", "-v", action="store_true",
+    parser.add_argument("--version", action="store_true",
                         help="Show version and exit")
     parser.add_argument("--about", action="store_true",
                         help="Show about information")
@@ -849,7 +1002,7 @@ Examples:
                         help="Check for updates")
     parser.add_argument("--debug", action="store_true",
                         help="Enable debug logging")
-    parser.add_argument("--verbose", "-V", action="store_true",
+    parser.add_argument("--verbose", "-v", action="store_true",
                         help="Enable verbose output")
     parser.add_argument("--no-cache", action="store_true",
                         help="Disable caching")
@@ -858,13 +1011,15 @@ Examples:
     parser.add_argument("--player", type=str, default=None,
                         choices=["mpv", "vlc"],
                         help="Set default player (mpv or vlc)")
+    parser.add_argument("--login", action="store_true",
+                        help="Save YouTube cookies from your browser for authentication")
+    parser.add_argument("--logout", action="store_true",
+                        help="Clear saved YouTube cookies")
 
     args = parser.parse_args()
 
-    if args.verbose:
-        log = setup_logger("DEBUG")
-    if args.debug:
-        log = setup_logger("DEBUG")
+    if args.verbose or args.debug:
+        setup_logger("DEBUG")
 
     if args.player:
         Config().set(args.player, "player", "default")
@@ -900,6 +1055,12 @@ Examples:
 
     Preloader.cleanup_stale()
     try:
+        if args.login:
+            _login()
+            return
+        if args.logout:
+            _logout()
+            return
         main_loop(args)
     except KeyboardInterrupt:
         print()

@@ -6,6 +6,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)]()
+[![CI](https://github.com/rgkks/hindi-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/rgkks/hindi-cli/actions/workflows/ci.yml)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)]()
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
@@ -62,7 +63,6 @@ chmod +x install.sh
 ```bash
 git clone https://github.com/rgkks/hindi-cli.git
 cd hindi-cli
-pip install -r requirements.txt
 pip install -e .
 ```
 
@@ -86,7 +86,7 @@ hindi-cli
 ```
 hindi-cli                           Start interactive mode
 hindi-cli --help / -h               Show help
-hindi-cli --version / -v            Show version
+hindi-cli --version                 Show version
 hindi-cli --about                   Show about information
 hindi-cli --doctor                  Run system diagnostics
 hindi-cli --stats                   Show usage statistics
@@ -95,10 +95,12 @@ hindi-cli --clear-cache             Clear all cached data
 hindi-cli --config                  Show config file
 hindi-cli --check-update            Check for updates
 hindi-cli --debug                   Run with debug logging
-hindi-cli --verbose / -V            Run with verbose output
+hindi-cli --verbose / -v            Run with verbose output
 hindi-cli --no-cache                Disable preloading
 hindi-cli --player mpv|vlc          Set default player
 hindi-cli --quiet / -q              Suppress startup banner
+hindi-cli --login                   Save YouTube cookies from browser
+hindi-cli --logout                  Clear saved YouTube cookies
 ```
 
 ### Interactive Mode
@@ -151,8 +153,7 @@ Config file: `~/.config/hindi-cli/config.json`
     "mpv_args": [...]
   },
   "ui": {
-    "theme": "dark",
-    "thumbnails": false
+    "theme": "dark"
   },
   "behavior": {
     "history_size": 500
@@ -177,9 +178,9 @@ hindi-cli/
 ├── install.sh           # Installer
 ├── core/                # Config, database, fzf, plugin
 ├── providers/           # YouTube, Anime, Movies
-├── player/              # MPV/VLC player
-├── ui/                  # Menu, Status, Spinner
-└── utils/               # Cache, logger, platform, preloader
+├── ui/                  # Menu, Status
+├── utils/               # Cache, logger, platform, preloader
+└── tests/               # Test suite (66+ tests)
 ```
 
 ---
@@ -215,7 +216,9 @@ A: Yes: `hindi-cli --player vlc` or set `"default": "vlc"` in config.
 
 - [ ] Playlist/queue support
 - [ ] Download manager with batch queue
-- [ ] Thumbnail previews in fzf (kitty/ueberzug)
+- [ ] Playlist/queue support
+- [ ] Download manager with batch queue
+- [ ] Thumbnail previews in fzf (kitty/ueberzugpp)
 - [ ] Configurable key bindings
 - [ ] Subtitles search and download
 - [ ] Audio-only mode enhancements

@@ -14,6 +14,7 @@ def setup_logger(level: str = "INFO") -> logging.Logger:
 
     logger = logging.getLogger("hindi-cli")
     logger.setLevel(getattr(logging, level.upper(), logging.INFO))
+    logger.handlers.clear()
 
     fh = logging.FileHandler(str(LOG_PATH))
     fh.setLevel(logging.DEBUG)
@@ -23,7 +24,7 @@ def setup_logger(level: str = "INFO") -> logging.Logger:
     ))
 
     ch = logging.StreamHandler(sys.stderr)
-    ch.setLevel(getattr(logging, level.upper(), logging.WARNING))
+    ch.setLevel(logging.WARNING)
     ch.setFormatter(logging.Formatter("%(message)s"))
 
     logger.addHandler(fh)

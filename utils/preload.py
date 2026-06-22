@@ -9,18 +9,37 @@ from typing import Dict, Optional, Tuple
 from core.config import Config
 from ui.status import Status
 from utils.logger import log
-from utils.platform import get_cache_dir
+from utils.platform import get_cache_dir, ytdl_cookie_args
+
+
+_YT_ERROR_HINTS = [
+    ("sign in to confirm", "This video requires a YouTube account to watch. Try a different video."),
+    ("login_required", "This video requires a YouTube account to watch. Try a different video."),
+    ("geo_blocked", "This video is blocked in your region. Use a VPN or try a different video."),
+    ("video unavailable", "This video has been removed or is unavailable."),
+    ("private video", "This video is private."),
+    ("confirm your age", "This video requires age verification. Sign in to YouTube in your browser."),
+    ("age-gate", "This video is age-restricted."),
+]
+
+
+def _is_video_unavailable(stderr: str) -> Optional[str]:
+    lower = stderr.lower()
+    for pattern, hint in _YT_ERROR_HINTS:
+        if pattern in lower:
+            return hint
+    return None
 
 
 PRELOAD_DIR = get_cache_dir() / "cache"
 
 PRELOAD_FORMATS: Dict[str, str] = {
-    "2160p": "best[height<=2160]",
-    "1440p": "best[height<=1440]",
-    "1080p": "best[height<=1080]",
-    "720p": "best[height<=720]",
-    "480p": "best[height<=480]",
-    "360p": "best[height<=360]",
+    "2160p": "bestvideo[height<=2160]+bestaudio/best[height<=2160]",
+    "1440p": "bestvideo[height<=1440]+bestaudio/best[height<=1440]",
+    "1080p": "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
+    "720p": "bestvideo[height<=720]+bestaudio/best[height<=720]",
+    "480p": "bestvideo[height<=480]+bestaudio/best[height<=480]",
+    "360p": "bestvideo[height<=360]+bestaudio/best[height<=360]",
     "audio": "bestaudio/best",
 }
 
@@ -43,7 +62,9 @@ def _parse_progress(line: str) -> Optional[str]:
 
 
 class Preloader:
-    def __init__(self):
+    last_fail_hint: Optional[str] = None
+
+    def __init__(self) -> None:
         PRELOAD_DIR.mkdir(parents=True, exist_ok=True)
 
     def preload(self, url: str, quality: str, title: str = "",
@@ -53,14 +74,18 @@ class Preloader:
             return None
         self._maybe_cleanup()
 
-        threshold = threshold or _to_bytes(cfg.get("preload", "threshold_mb", default=50))
+        raw_threshold = cfg.get("preload", "threshold_mb", default=50)
+        if not isinstance(raw_threshold, (int, float)) or raw_threshold <= 0:
+            raw_threshold = 50
+        threshold = threshold or _to_bytes(int(raw_threshold))
         fmt = PRELOAD_FORMATS.get(quality, PRELOAD_FORMATS["720p"])
         safe = re.sub(r'[^\w\- ]', '_', title)[:50] if title else "video"
         cache_stem = f"{safe}_{int(time.time())}"
         cache_path = PRELOAD_DIR / f"{cache_stem}.mp4"
 
+        cookie_args = ytdl_cookie_args()
         proc = subprocess.Popen(
-            ["yt-dlp", "-f", fmt, "-o", str(cache_path),
+            ["yt-dlp"] + cookie_args + ["-f", fmt, "-o", str(cache_path),
              "--no-warnings", "--no-mtime", "--no-part",
              "--progress", "--newline",
              url],
@@ -73,12 +98,20 @@ class Preloader:
         lock = threading.Lock()
         stop_reader = threading.Event()
 
-        def _reader():
-            for line in proc.stderr:
-                with lock:
-                    progress_lines.append(line.rstrip())
-                if stop_reader.is_set():
-                    break
+        def _reader() -> None:
+            try:
+                for line in iter(proc.stderr.readline, ""):
+                    with lock:
+                        progress_lines.append(line.rstrip())
+                    if stop_reader.is_set():
+                        break
+            except ValueError:
+                pass
+            finally:
+                try:
+                    proc.stderr.close()
+                except OSError:
+                    pass
 
         reader_thread = threading.Thread(target=_reader, daemon=True)
         reader_thread.start()
@@ -87,12 +120,16 @@ class Preloader:
         status.start()
         start = time.time()
         last_progress = ""
+        _normal_exit = False
 
         try:
             while True:
                 ret = proc.poll()
                 if ret is not None:
                     stop_reader.set()
+                    time.sleep(0.05)
+                    with lock:
+                        stderr_tail = "\n".join(progress_lines[-5:]) if progress_lines else ""
                     try:
                         size = cache_path.stat().st_size
                     except OSError:
@@ -100,9 +137,18 @@ class Preloader:
                     if size > 0:
                         size_mb = size // 1024 // 1024
                         status.succeed(f"[Cache] Complete ({size_mb}MB)")
+                        _normal_exit = True
                         return cache_path, None
-                    status.fail(f"[Cache] Failed (exit {ret})")
-                    Preloader._cleanup_file(cache_path)
+                    err_msg = stderr_tail[:300] if stderr_tail else f"exit {ret}"
+                    hint = _is_video_unavailable(err_msg)
+                    if hint:
+                        status.fail(f"[Skip] {hint}")
+                        self.last_fail_hint = hint
+                        Preloader._cleanup_file(cache_path)
+                    else:
+                        status.stop()
+                        self.last_fail_hint = None
+                    _normal_exit = True
                     return None
 
                 elapsed = int(time.time() - start)
@@ -126,6 +172,7 @@ class Preloader:
 
                     if size >= threshold:
                         status.succeed(f"[Cache] Buffer ready: {size_mb}MB")
+                        _normal_exit = True
                         return cache_path, proc
                 elif last_progress:
                     status.update(message="[Cache] Downloading...")
@@ -137,6 +184,7 @@ class Preloader:
                         size = cache_path.stat().st_size
                         size_mb = size // 1024 // 1024
                         status.succeed(f"[Cache] Partial ({size_mb}MB), starting playback")
+                        _normal_exit = True
                         return cache_path, proc
                     except OSError:
                         status.fail(f"[Cache] Timeout, no data")
@@ -144,19 +192,36 @@ class Preloader:
 
                 time.sleep(0.5)
 
+            _normal_exit = True
             proc.kill()
             proc.wait()
             Preloader._cleanup_file(cache_path)
             return None
 
         finally:
+            if not _normal_exit:
+                proc.kill()
+                proc.wait()
+                Preloader._cleanup_file(cache_path)
             stop_reader.set()
+            try:
+                proc.stderr.close()
+            except OSError:
+                pass
             reader_thread.join(timeout=2)
             sys.stderr.write("\033[?25h")
             sys.stderr.flush()
 
-    def _maybe_cleanup(self):
-        max_bytes = _to_bytes(Config().get("preload", "max_cache_mb", default=2048))
+    _cleanup_counter = 0
+
+    def _maybe_cleanup(self) -> None:
+        Preloader._cleanup_counter += 1
+        if Preloader._cleanup_counter % 10 != 0:
+            return
+        raw_max = Config().get("preload", "max_cache_mb", default=2048)
+        if not isinstance(raw_max, (int, float)) or raw_max <= 0:
+            raw_max = 2048
+        max_bytes = _to_bytes(int(raw_max))
         try:
             files = [f for f in PRELOAD_DIR.iterdir() if f.is_file()]
             total = sum(f.stat().st_size for f in files)
@@ -173,7 +238,7 @@ class Preloader:
             log.warning(f"Cache cleanup error: {e}")
 
     @staticmethod
-    def cleanup_stale():
+    def cleanup_stale() -> None:
         PRELOAD_DIR.mkdir(parents=True, exist_ok=True)
         count = 0
         for f in PRELOAD_DIR.iterdir():
@@ -189,7 +254,7 @@ class Preloader:
             log.info(f"Cleaned {count} stale cache files")
 
     @staticmethod
-    def cleanup_all():
+    def cleanup_all() -> None:
         count = 0
         try:
             for f in PRELOAD_DIR.iterdir():
@@ -202,7 +267,7 @@ class Preloader:
             log.info(f"Cleaned {count} cache files on exit")
 
     @staticmethod
-    def _cleanup_file(path: Path):
+    def _cleanup_file(path: Path) -> None:
         try:
             path.unlink(missing_ok=True)
         except Exception:
