@@ -216,8 +216,6 @@ A: Yes: `hindi-cli --player vlc` or set `"default": "vlc"` in config.
 
 - [ ] Playlist/queue support
 - [ ] Download manager with batch queue
-- [ ] Playlist/queue support
-- [ ] Download manager with batch queue
 - [ ] Thumbnail previews in fzf (kitty/ueberzugpp)
 - [ ] Configurable key bindings
 - [ ] Subtitles search and download
